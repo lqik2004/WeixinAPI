@@ -5,18 +5,31 @@ require 'grape'
 require 'active_support/core_ext'
 require 'rack'
 
-class MyAPI < Grape::API
+#Token Value
+Token = 'mobwifi'
+
+class WeiXinWifiAPI < Grape::API
   version 'v1', :using => :path
   format :xml
   content_type :xml, "text/xml"
 
   helpers do
     def checksignature(signature, timestamp, nonce)
-      array = [token, timestamp, nonce].sort
+      array = [::Token, timestamp, nonce].sort
       signature == Digest::SHA1.hexdigest(array.join)
+    end
+
+    # 根据google经纬度返回baidu经纬度
+    # # return [lng_b, lat_b]
+    def get_baidu_lat_lng(lat_g, lng_g)
+      baidu_api_url = URI("http://api.map.baidu.com/ag/coord/convert?from=2&to=4&x=#{lng_g}&y=#{lat_g}")
+      result = Net::HTTP.get(baidu_api_url)
+      # 获取百度经纬度，去掉多余部分并Base64解码
+      JSON.parse(result).delete_if {|k, v| k == 'error' }.map {|k,v| Base64.decode64(v)}
     end
   end
 
+  desc "test"
   get '/test' do
     {:a => 1}.to_xml
   end
@@ -36,9 +49,9 @@ class MyAPI < Grape::API
     when "text"
       reply = body['xml']['Content']
     when "location"
-      url = "http://api.map.baidu.com/geocoder?location=#{body['xml']['Location_X']},#{body['xml']['Location_Y']}&output=json&key=9d303595cfbaa7f96ab0e7f56c1fd29f"
-      result = JSON::parse(Net::HTTP.get(URI(url)))
-      reply = result["result"]["formatted_address"]
+      local_array = get_baidu_lat_lng([body['xml']['Location_X'], body['xml']['Location_Yl']])
+      #TODO 
+      #reply = local_array.join(", ")
     end
     builder = Nokogiri::XML::Builder.new do |x|
       x.xml() {
@@ -61,7 +74,7 @@ class MyAPI < Grape::API
   end
 end
 
-run ::MyAPI
+run ::WeiXinWifiAPI
 
-# 执行方式 rackup config.ru -p 8888
+# 执行方式 rackup api.ru -p 8888
 # 请求链接 http://localhost:8888/v1/test
